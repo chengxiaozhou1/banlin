@@ -187,15 +187,29 @@ def health_check():
 
 @app.route('/api/test-email', methods=['GET'])
 def test_email():
-    """测试邮件发送"""
-    result = send_email_brevo(
-        '【伴邻】邮件测试',
-        '<h2>邮件发送测试成功！</h2><p>如果你看到这封邮件，说明 Brevo 配置正确。</p>'
-    )
-    if result:
-        return jsonify({'success': True, 'message': '邮件发送成功！请检查收件箱'}), 200
-    else:
-        return jsonify({'success': False, 'message': '邮件发送失败，请检查日志'}), 500
+    """测试邮件发送，返回详细错误"""
+    try:
+        url = "https://api.brevo.com/v3/smtp/email"
+        payload = {
+            "sender": {"name": "BanLin", "email": SENDER_EMAIL},
+            "to": [{"email": RECIPIENT_EMAIL}],
+            "subject": "BanLin Email Test",
+            "htmlContent": "<h2>Test OK</h2><p>Brevo is working.</p>"
+        }
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=data, method='POST')
+        req.add_header('accept', 'application/json')
+        req.add_header('api-key', BREVO_API_KEY)
+        req.add_header('content-type', 'application/json')
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = response.read().decode('utf-8')
+            return jsonify({'success': True, 'message': 'Email sent!', 'brevo_response': result}), 200
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode('utf-8')
+        return jsonify({'success': False, 'error': str(e), 'detail': error_body}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e), 'type': type(e).__name__}), 500
 
 # 静态文件路由放在最后
 @app.route('/')
