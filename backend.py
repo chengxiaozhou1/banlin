@@ -5,45 +5,53 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import os
+import threading
+import traceback
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=BASE_DIR, static_url_path='')
 CORS(app)
 
-# Gmail 配置 - 从环境变量读取，更安全
+# Gmail 配置 - 从环境变量读取
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "chengxiaozhou1@gmail.com")
 GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "")
 RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "chengxiaozhou1@gmail.com")
 
-def send_email(subject, html_content):
-    """发送邮件"""
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = subject
-        msg['From'] = GMAIL_ADDRESS
-        msg['To'] = RECIPIENT_EMAIL
+# 启动时打印配置状态（不打印密码）
+print(f"[CONFIG] GMAIL_ADDRESS: {GMAIL_ADDRESS}")
+print(f"[CONFIG] GMAIL_PASSWORD set: {'YES' if GMAIL_PASSWORD else 'NO'}")
+print(f"[CONFIG] RECIPIENT_EMAIL: {RECIPIENT_EMAIL}")
 
-        # 添加 HTML 内容
-        msg.attach(MIMEText(html_content, 'html', 'utf-8'))
+def send_email_async(subject, html_content):
+    """在后台线程中发送邮件"""
+    def _send():
+        try:
+            print(f"[EMAIL] 开始发送邮件: {subject}")
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = subject
+            msg['From'] = GMAIL_ADDRESS
+            msg['To'] = RECIPIENT_EMAIL
+            msg.attach(MIMEText(html_content, 'html', 'utf-8'))
 
-        # 连接 Gmail SMTP 服务器
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
-        server.send_message(msg)
-        server.quit()
+            server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30)
+            server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
+            server.send_message(msg)
+            server.quit()
+            print(f"[EMAIL] 邮件发送成功: {subject}")
+        except Exception as e:
+            print(f"[EMAIL ERROR] 邮件发送失败: {str(e)}")
+            traceback.print_exc()
 
-        return True
-    except Exception as e:
-        print(f"邮件发送失败: {str(e)}")
-        return False
+    thread = threading.Thread(target=_send)
+    thread.start()
 
 @app.route('/api/booking', methods=['POST'])
 def submit_booking():
     """处理预约表单提交"""
     try:
         data = request.json
+        print(f"[BOOKING] 收到预约: {data.get('name', 'unknown')}")
 
-        # 构建邮件内容
         html_content = f"""
         <html>
             <head>
@@ -64,29 +72,24 @@ def submit_booking():
                         <h2>🏠 新的预约陪伴服务申请</h2>
                         <p>来自伴邻网站的表单提交</p>
                     </div>
-
                     <div class="section">
                         <p><span class="label">申请人姓名：</span>{data.get('name', '未填写')}</p>
                         <p><span class="label">联系电话：</span>{data.get('phone', '未填写')}</p>
                         <p><span class="label">电子邮箱：</span>{data.get('email', '未填写')}</p>
                     </div>
-
                     <div class="section">
                         <p><span class="label">与长辈关系：</span>{data.get('relationship', '未填写')}</p>
                         <p><span class="label">长辈年龄：</span>{data.get('age', '未填写')}</p>
                         <p><span class="label">所在区域：</span>{data.get('district', '未填写')}</p>
                     </div>
-
                     <div class="section">
                         <p><span class="label">主要需求：</span></p>
                         <p>{', '.join(data.get('services', [])) if data.get('services') else '未选择'}</p>
                     </div>
-
                     <div class="section">
                         <p><span class="label">补充说明：</span></p>
                         <p>{data.get('remarks', '无')}</p>
                     </div>
-
                     <div class="footer">
                         <p>提交时间：{datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}</p>
                         <p>来自伴邻 BanLin 服务平台</p>
@@ -96,13 +99,13 @@ def submit_booking():
         </html>
         """
 
-        # 发送邮件
-        if send_email('【伴邻】新的预约陪伴服务申请', html_content):
-            return jsonify({'success': True, 'message': '预约已提交，我们将在24小时内联系您'}), 200
-        else:
-            return jsonify({'success': False, 'message': '邮件发送失败，请稍后重试'}), 500
+        # 异步发送邮件，立即返回成功
+        send_email_async('【伴邻】新的预约陪伴服务申请', html_content)
+        return jsonify({'success': True, 'message': '预约已提交，我们将在24小时内联系您'}), 200
 
     except Exception as e:
+        print(f"[BOOKING ERROR] {str(e)}")
+        traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/apply', methods=['POST'])
@@ -110,8 +113,8 @@ def submit_apply():
     """处理伴邻申请表单提交"""
     try:
         data = request.json
+        print(f"[APPLY] 收到申请: {data.get('name', 'unknown')}")
 
-        # 构建邮件内容
         html_content = f"""
         <html>
             <head>
@@ -132,29 +135,24 @@ def submit_apply():
                         <h2>❤️ 新的伴邻伙伴申请</h2>
                         <p>有新的年轻伙伴想加入我们</p>
                     </div>
-
                     <div class="section">
                         <p><span class="label">申请人姓名：</span>{data.get('name', '未填写')}</p>
                         <p><span class="label">联系电话：</span>{data.get('phone', '未填写')}</p>
                         <p><span class="label">电子邮箱：</span>{data.get('email', '未填写')}</p>
                     </div>
-
                     <div class="section">
                         <p><span class="label">年龄：</span>{data.get('age', '未填写')}</p>
                         <p><span class="label">当前身份：</span>{data.get('identity', '未填写')}</p>
                         <p><span class="label">常住区域：</span>{data.get('district', '未填写')}</p>
                     </div>
-
                     <div class="section">
                         <p><span class="label">可服务时间：</span></p>
                         <p>{', '.join(data.get('availableTime', [])) if data.get('availableTime') else '未选择'}</p>
                     </div>
-
                     <div class="section">
                         <p><span class="label">申请理由：</span></p>
                         <p>{data.get('motivation', '无')}</p>
                     </div>
-
                     <div class="footer">
                         <p>提交时间：{datetime.now().strftime('%Y年%m月%d日 %H:%M:%S')}</p>
                         <p>来自伴邻 BanLin 服务平台</p>
@@ -164,21 +162,25 @@ def submit_apply():
         </html>
         """
 
-        # 发送邮件
-        if send_email('【伴邻】新的伴邻伙伴申请', html_content):
-            return jsonify({'success': True, 'message': '申请已提交，我们将在24小时内联系您'}), 200
-        else:
-            return jsonify({'success': False, 'message': '邮件发送失败，请稍后重试'}), 500
+        # 异步发送邮件，立即返回成功
+        send_email_async('【伴邻】新的伴邻伙伴申请', html_content)
+        return jsonify({'success': True, 'message': '申请已提交，我们将在24小时内联系您'}), 200
 
     except Exception as e:
+        print(f"[APPLY ERROR] {str(e)}")
+        traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """健康检查"""
-    return jsonify({'status': 'ok', 'message': 'Backend is running'}), 200
+    return jsonify({
+        'status': 'ok',
+        'gmail_configured': bool(GMAIL_PASSWORD),
+        'message': 'Backend is running'
+    }), 200
 
-# 静态文件路由放在最后，避免拦截 API 路由
+# 静态文件路由放在最后
 @app.route('/')
 def serve_index():
     return send_from_directory(BASE_DIR, 'index.html')
