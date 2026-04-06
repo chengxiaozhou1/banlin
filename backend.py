@@ -1,48 +1,55 @@
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import os
 import threading
 import traceback
+import json
+import urllib.request
+import urllib.error
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=BASE_DIR, static_url_path='')
 CORS(app)
 
-# Gmail 配置 - 从环境变量读取
-GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "chengxiaozhou1@gmail.com")
-GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "")
+# Brevo API 配置
+BREVO_API_KEY = os.environ.get("BREVO_API_KEY", "")
+SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "chengxiaozhou1@gmail.com")
 RECIPIENT_EMAIL = os.environ.get("RECIPIENT_EMAIL", "chengxiaozhou1@gmail.com")
 
-# 启动时打印配置状态（不打印密码）
-print(f"[CONFIG] GMAIL_ADDRESS: {GMAIL_ADDRESS}")
-print(f"[CONFIG] GMAIL_PASSWORD set: {'YES' if GMAIL_PASSWORD else 'NO'}")
+print(f"[CONFIG] BREVO_API_KEY set: {'YES' if BREVO_API_KEY else 'NO'}")
+print(f"[CONFIG] SENDER_EMAIL: {SENDER_EMAIL}")
 print(f"[CONFIG] RECIPIENT_EMAIL: {RECIPIENT_EMAIL}")
+
+def send_email_brevo(subject, html_content):
+    """通过 Brevo API 发送邮件"""
+    try:
+        print(f"[EMAIL] 开始发送邮件: {subject}")
+        url = "https://api.brevo.com/v3/smtp/email"
+        payload = {
+            "sender": {"name": "伴邻 BanLin", "email": SENDER_EMAIL},
+            "to": [{"email": RECIPIENT_EMAIL, "name": "伴邻管理员"}],
+            "subject": subject,
+            "htmlContent": html_content
+        }
+        data = json.dumps(payload).encode('utf-8')
+        req = urllib.request.Request(url, data=data, method='POST')
+        req.add_header('accept', 'application/json')
+        req.add_header('api-key', BREVO_API_KEY)
+        req.add_header('content-type', 'application/json')
+
+        with urllib.request.urlopen(req, timeout=30) as response:
+            result = response.read().decode('utf-8')
+            print(f"[EMAIL] 邮件发送成功: {subject}, response: {result}")
+            return True
+    except Exception as e:
+        print(f"[EMAIL ERROR] 邮件发送失败: {str(e)}")
+        traceback.print_exc()
+        return False
 
 def send_email_async(subject, html_content):
     """在后台线程中发送邮件"""
-    def _send():
-        try:
-            print(f"[EMAIL] 开始发送邮件: {subject}")
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = GMAIL_ADDRESS
-            msg['To'] = RECIPIENT_EMAIL
-            msg.attach(MIMEText(html_content, 'html', 'utf-8'))
-
-            server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30)
-            server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
-            server.send_message(msg)
-            server.quit()
-            print(f"[EMAIL] 邮件发送成功: {subject}")
-        except Exception as e:
-            print(f"[EMAIL ERROR] 邮件发送失败: {str(e)}")
-            traceback.print_exc()
-
-    thread = threading.Thread(target=_send)
+    thread = threading.Thread(target=send_email_brevo, args=(subject, html_content))
     thread.start()
 
 @app.route('/api/booking', methods=['POST'])
@@ -99,7 +106,6 @@ def submit_booking():
         </html>
         """
 
-        # 异步发送邮件，立即返回成功
         send_email_async('【伴邻】新的预约陪伴服务申请', html_content)
         return jsonify({'success': True, 'message': '预约已提交，我们将在24小时内联系您'}), 200
 
@@ -162,7 +168,6 @@ def submit_apply():
         </html>
         """
 
-        # 异步发送邮件，立即返回成功
         send_email_async('【伴邻】新的伴邻伙伴申请', html_content)
         return jsonify({'success': True, 'message': '申请已提交，我们将在24小时内联系您'}), 200
 
@@ -176,27 +181,21 @@ def health_check():
     """健康检查"""
     return jsonify({
         'status': 'ok',
-        'gmail_configured': bool(GMAIL_PASSWORD),
+        'brevo_configured': bool(BREVO_API_KEY),
         'message': 'Backend is running'
     }), 200
 
 @app.route('/api/test-email', methods=['GET'])
 def test_email():
-    """测试邮件发送（同步，返回结果）"""
-    try:
-        msg = MIMEMultipart('alternative')
-        msg['Subject'] = '【伴邻】邮件测试'
-        msg['From'] = GMAIL_ADDRESS
-        msg['To'] = RECIPIENT_EMAIL
-        msg.attach(MIMEText('<h2>邮件发送测试成功！</h2><p>如果你看到这封邮件，说明配置正确。</p>', 'html', 'utf-8'))
-
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30)
-        server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
-        server.send_message(msg)
-        server.quit()
+    """测试邮件发送"""
+    result = send_email_brevo(
+        '【伴邻】邮件测试',
+        '<h2>邮件发送测试成功！</h2><p>如果你看到这封邮件，说明 Brevo 配置正确。</p>'
+    )
+    if result:
         return jsonify({'success': True, 'message': '邮件发送成功！请检查收件箱'}), 200
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+    else:
+        return jsonify({'success': False, 'message': '邮件发送失败，请检查日志'}), 500
 
 # 静态文件路由放在最后
 @app.route('/')
