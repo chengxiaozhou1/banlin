@@ -180,6 +180,24 @@ def health_check():
         'message': 'Backend is running'
     }), 200
 
+@app.route('/api/test-email', methods=['GET'])
+def test_email():
+    """测试邮件发送（同步，返回结果）"""
+    try:
+        msg = MIMEMultipart('alternative')
+        msg['Subject'] = '【伴邻】邮件测试'
+        msg['From'] = GMAIL_ADDRESS
+        msg['To'] = RECIPIENT_EMAIL
+        msg.attach(MIMEText('<h2>邮件发送测试成功！</h2><p>如果你看到这封邮件，说明配置正确。</p>', 'html', 'utf-8'))
+
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30)
+        server.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return jsonify({'success': True, 'message': '邮件发送成功！请检查收件箱'}), 200
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # 静态文件路由放在最后
 @app.route('/')
 def serve_index():
