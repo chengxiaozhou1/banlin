@@ -6,16 +6,17 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import os
 
-app = Flask(__name__, static_folder='.', static_url_path='')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(__name__, static_folder=BASE_DIR, static_url_path='')
 CORS(app)
 
 @app.route('/')
 def serve_index():
-    return send_from_directory('.', 'index.html')
+    return send_from_directory(BASE_DIR, 'index.html')
 
 @app.route('/<path:path>')
 def serve_static(path):
-    return send_from_directory('.', path)
+    return send_from_directory(BASE_DIR, path)
 
 # Gmail 配置 - 从环境变量读取，更安全
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "chengxiaozhou1@gmail.com")
