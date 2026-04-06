@@ -10,14 +10,6 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=BASE_DIR, static_url_path='')
 CORS(app)
 
-@app.route('/')
-def serve_index():
-    return send_from_directory(BASE_DIR, 'index.html')
-
-@app.route('/<path:path>')
-def serve_static(path):
-    return send_from_directory(BASE_DIR, path)
-
 # Gmail 配置 - 从环境变量读取，更安全
 GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "chengxiaozhou1@gmail.com")
 GMAIL_PASSWORD = os.environ.get("GMAIL_PASSWORD", "")
@@ -185,6 +177,15 @@ def submit_apply():
 def health_check():
     """健康检查"""
     return jsonify({'status': 'ok', 'message': 'Backend is running'}), 200
+
+# 静态文件路由放在最后，避免拦截 API 路由
+@app.route('/')
+def serve_index():
+    return send_from_directory(BASE_DIR, 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory(BASE_DIR, path)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=False)
